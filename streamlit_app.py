@@ -78,6 +78,8 @@ div.stButton {
 # =====================================================
 # HEADER
 # =====================================================
+st.write("")
+st.write("")
 st.markdown("<div class='main-title'>🌱 Anomaly Detection IoT Sensor Data</div>", unsafe_allow_html=True)
 st.markdown("<div class='sub-title'>Hybrid Anomaly Detection using Autoencoder and Isolation Forest</div>", unsafe_allow_html=True)
 
