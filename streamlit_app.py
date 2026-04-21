@@ -1,296 +1,269 @@
 import streamlit as st
 import numpy as np
-import pandas as pd
-import joblib
-import tensorflow as tf
-import os
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import IsolationForest
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense
 
-# =========================
-# CONFIG
-# =========================
+# =====================================================
+# PAGE CONFIG
+# =====================================================
 st.set_page_config(
-    page_title="Anomaly Detection Dashboard",
+    page_title="Anomaly Detection IoT Sensor Data",
     page_icon="🌱",
     layout="wide"
 )
 
-MODEL_PATH = "models/"
-
-required_files = [
-    "autoencoder_soil.keras",
-    "encoder_soil.keras",
-    "isolation_forest_soil.pkl",
-    "scaler_soil.pkl",
-    "insight_soil.pkl"
-]
-
-missing = [f for f in required_files if not os.path.exists(MODEL_PATH + f)]
-if missing:
-    st.error(f"Missing files: {missing}")
-    st.stop()
-
-# =========================
-# LOAD MODELS
-# =========================
-autoencoder = tf.keras.models.load_model(MODEL_PATH + "autoencoder_soil.keras", compile=False)
-encoder = tf.keras.models.load_model(MODEL_PATH + "encoder_soil.keras", compile=False)
-iso = joblib.load(MODEL_PATH + "isolation_forest_soil.pkl")
-scaler = joblib.load(MODEL_PATH + "scaler_soil.pkl")
-insight_data = joblib.load(MODEL_PATH + "insight_soil.pkl")
-
-feature_cols = insight_data["feature_cols"]
-mean_normal = insight_data["mean_normal"]
-std_normal = insight_data["std_normal"]
-
-# =========================
-# STYLE (UNCHANGED)
-# =========================
+# =====================================================
+# STYLE
+# =====================================================
 st.markdown("""
 <style>
-.block-container {padding: 1.5rem 2rem;}
-.title {
-    font-size: 2.2rem;
-    font-weight: 800;
-    background: linear-gradient(90deg,#16a34a,#0284c7);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-.sub {color:#64748b;}
-.card {
-    padding: 16px;
-    border-radius: 16px;
-    background: white;
-    border: 1px solid #e5e7eb;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+.block-container{
+    padding:1rem 2rem;
 }
 
-button[aria-label="Increment value"],
-button[aria-label="Decrement value"] {
-    background-color: #d1fae5 !important;
-    color: #065f46 !important;
-    border: none !important;
-    border-radius: 6px !important;
+/* input kecil */
+input[type=number]{
+    height:35px;
+    font-size:13px;
 }
 
-button[aria-label="Increment value"]:hover,
-button[aria-label="Decrement value"]:hover {
-    background-color: #a7f3d0 !important;
+/* title */
+.main-title{
+    font-size:34px;
+    font-weight:800;
+    background:linear-gradient(90deg,#16a34a,#0284c7);
+    -webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
 }
 
+.sub-title{
+    color:#64748b;
+    margin-bottom:10px;
+}
+
+/* metric */
+.metric-box{
+    background:#f8fafc;
+    border-radius:14px;
+    padding:12px;
+    text-align:center;
+}
+
+.small{
+    font-size:12px;
+    color:#64748b;
+}
+
+/* tombol full lebar */
 .stButton > button {
-    background: linear-gradient(90deg, #16a34a, #0284c7) !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 12px !important;
-    padding: 0.6rem 1rem !important;
-    font-weight: 600 !important;
-    font-size: 16px !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    width: 100% !important;
+    display: block;
+    background: linear-gradient(90deg,#16a34a,#0284c7);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-weight: 700;
+    padding: 0.6rem;
 }
 
-div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-    font-size: 28px !important;
-    font-weight: 800 !important;
-}
-
-.metric-green div[data-testid="stMetricValue"] {
-    color: #16a34a !important;
-}
-
-.metric-red div[data-testid="stMetricValue"] {
-    color: #ef4444 !important;
-}
-
-div[data-testid="stMetricLabel"] {
-    color: #6b7280 !important;
+/* paksa container tombol ikut full */
+div.stButton {
+    width: 100% !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("</br><br><div class='title'>🌱 IoT Sensor Anomaly Detection Monitoring Dashboard</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub'>Hybrid Anomaly Detection using Autoencoder and Isolation Forest</div>", unsafe_allow_html=True)
+# =====================================================
+# HEADER
+# =====================================================
+st.markdown("<div class='main-title'>🌱 Anomaly Detection IoT Sensor Data</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-title'>Hybrid Anomaly Detection using Autoencoder and Isolation Forest</div>", unsafe_allow_html=True)
 
-# =========================
-# INSIGHT FUNCTION (IMPROVED TEXT ONLY)
-# =========================
-def generate_status(row):
-    values = row[feature_cols].values.astype(float)
+# =====================================================
+# DEFAULT DATA
+# =====================================================
+manual_tests = {
+    "S1":  [33.5, 25.6, 650, 5.0, 108, 295, 288],
+    "S2":  [41.2, 24.9, 410, 5.4, 72, 210, 202],
+    "S3":  [0, 0, 0, 0, 0, 0, 0],
+    "S4":  [33.5, 25.6, 0, 5.0, 108, 295, 288],
+    "S5":  [80, 38, 1200, 8.5, 300, 500, 450],
+    "S6":  [12, 18, 90, 3.5, 5, 20, 15],
+    "S7":  [12, 18, 90, 3.5, 5, 20, 15]
+}
 
-    if np.sum(values == 0) == len(feature_cols):
-        return (
-            "Critical system alert: all sensors report zero values. "
-            "This strongly indicates a power supply failure or the device is offline."
-        )
+features = ["hu", "ta", "ec", "ph", "n", "p", "k"]
+sensor_ids = list(manual_tests.keys())
 
-    if np.any(values == 0):
-        zero_params = [col for col in feature_cols if row[col] == 0]
-        return (
-            "Sensor malfunction detected. "
-            f"No readings from: {', '.join(zero_params)}. "
-            "Possible causes include sensor damage, loose wiring, or calibration issues."
-        )
+# =====================================================
+# LAYOUT
+# =====================================================
+left, right = st.columns([1.4, 1])
 
-    if row["model_flag"] == 0:
-        return "System status normal: all sensor readings are within expected range."
-
-    z = {
-        col: (row[col] - mean_normal[col]) / (std_normal[col] + 1e-9)
-        for col in feature_cols
-    }
-
-    main = max(z, key=lambda x: abs(z[x]))
-    high = z[main] >= 0
-
-    mapping = {
-        "hu": ["Soil moisture is below normal range.", "Soil moisture is above normal range."],
-        "ta": ["Temperature is lower than expected.", "Temperature is higher than expected."],
-        "ec": ["Electrical conductivity is lower than normal.", "Electrical conductivity is higher than normal."],
-        "ph": ["Soil condition is more acidic than usual.", "Soil condition is more alkaline than usual."],
-        "n": ["Nitrogen level is lower than expected.", "Nitrogen level is higher than expected."],
-        "p": ["Phosphorus level is lower than expected.", "Phosphorus level is higher than expected."],
-        "k": ["Potassium level is lower than expected.", "Potassium level is higher than expected."]
-    }
-
-    return mapping[main][1 if high else 0]
-
-# =========================
-# LAYOUT (UNCHANGED)
-# =========================
-left, right = st.columns([1.1, 1])
-
+# =====================================================
+# INPUT TABLE
+# =====================================================
 with left:
-    st.markdown("<h3 style='color:#16a34a;'>Sensor Input</h3>", unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
+    st.markdown("### Sensor Input")
 
-    hu = c1.number_input("Humidity", value=33.5)
-    ta = c2.number_input("Temperature", value=25.6)
-    ec = c3.number_input("Conductivity", value=650.0)
+    # Header
+    header = st.columns(8)
+    header[0].markdown("**Sensor**")
+    for i, f in enumerate(features):
+        header[i+1].markdown(f"**{f.upper()}**")
 
-    ph = c1.number_input("pH Level", value=5.0)
-    n = c2.number_input("Nitrogen", value=108.0)
-    p = c3.number_input("Phosphorus", value=295.0)
+    sensor_data = []
 
-    k = st.number_input("Potassium", value=288.0)
+    for s in sensor_ids:
 
-    run = st.button("Analyze Now", use_container_width=True)
+        cols = st.columns(8)
+        cols[0].markdown(f"**{s}**")
 
+        row = []
+        for i, f in enumerate(features):
+            val = cols[i+1].number_input(
+                "",
+                value=float(manual_tests[s][i]),
+                key=f"{s}_{f}",
+                label_visibility="collapsed"
+            )
+            row.append(val)
+
+        sensor_data.append(row)
+
+    run = st.button("Analyze Now")
+
+# =====================================================
+# DEFAULT RIGHT
+# =====================================================
 with right:
-    st.markdown("<h3 style='color:#16a34a;'>Insight Panel</h3>", unsafe_allow_html=True)
-    placeholder = st.empty()
-
     if not run:
-        with placeholder.container():
-            st.info("Waiting for input...")
-            c1, c2 = st.columns(2)
-            c1.metric("Status", "-")
-            c2.metric("Risk Score", "-")
+        st.markdown("### Analysis Result")
+        st.info("Waiting for input...")
 
-# =========================
-# ENGINE (UNCHANGED LOGIC)
-# =========================
+# =====================================================
+# ENGINE
+# =====================================================
 if run:
 
-    input_dict = {
-        "hu": hu,
-        "ta": ta,
-        "ec": ec,
-        "ph": ph,
-        "n": n,
-        "p": p,
-        "k": k
-    }
+    X = np.array(sensor_data)
 
-    values = np.array([input_dict[col] for col in feature_cols])
-    zero_params = [col for col in feature_cols if input_dict[col] == 0]
+    # -----------------------------
+    # RULE BASE (ZERO = HARD ANOMALY)
+    # -----------------------------
+    rule_alerts = []
+    forced_anomaly_idx = set()
 
-    sensor_issues = []
+    for i, row in enumerate(X):
 
-    if len(zero_params) == len(feature_cols):
-        sensor_issues.append("Critical system failure: all sensors are inactive (zero readings).")
-    elif len(zero_params) > 0:
-        sensor_issues.append("Sensor malfunction detected on: " + ", ".join(zero_params))
+        if np.all(row == 0):
+            rule_alerts.append(f"{sensor_ids[i]} mati (semua parameter 0)")
+            forced_anomaly_idx.add(i)
 
-    X = values.reshape(1, -1)
-    X_scaled = scaler.transform(X)
+        elif np.any(row == 0):
+            rule_alerts.append(f"{sensor_ids[i]} ada parameter bernilai 0")
+            forced_anomaly_idx.add(i)
 
-    latent = encoder.predict(X_scaled, verbose=0)
-    pred = int(iso.predict(latent)[0])
-    score = float(-iso.decision_function(latent)[0])
+    # -----------------------------
+    # SCALING
+    # -----------------------------
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-    model_anomaly = (pred == -1)
+    # -----------------------------
+    # AUTOENCODER
+    # -----------------------------
+    inp = Input(shape=(7,))
+    x = Dense(5, activation="relu")(inp)
+    x = Dense(3, activation="relu")(x)
+    x = Dense(5, activation="relu")(x)
+    out = Dense(7)(x)
 
-    z_scores = {
-        col: (val - mean_normal[col]) / (std_normal[col] + 1e-9)
-        for col, val in zip(feature_cols, values)
-    }
+    ae = Model(inp, out)
+    ae.compile(optimizer="adam", loss="mse")
+    ae.fit(X_scaled, X_scaled, epochs=50, verbose=0)
 
-    abnormal_features = [col for col, z in z_scores.items() if abs(z) > 2.5]
+    recon = ae.predict(X_scaled, verbose=0)
+    errors = np.mean(np.square(X_scaled - recon), axis=1)
 
-    anomalies = []
+    # -----------------------------
+    # ISOLATION FOREST
+    # -----------------------------
+    iso = IsolationForest(contamination=0.2, random_state=42)
+    preds = iso.fit_predict(X_scaled)
+    scores = -iso.decision_function(X_scaled)
 
-    anomalies.extend(sensor_issues)
+    # -----------------------------
+    # DETECTION
+    # -----------------------------
+    anomaly_idx = set()
+    messages = []
 
-    if model_anomaly:
-        anomalies.append("Anomaly detected: data pattern significantly deviates from normal behavior.")
+    for i in range(len(sensor_ids)):
 
-    if abnormal_features:
-        anomalies.append("Extreme variation detected in: " + ", ".join(abnormal_features))
+        if preds[i] == -1 or errors[i] > np.mean(errors) + 2*np.std(errors):
+            anomaly_idx.add(i)
+            messages.append(f"{sensor_ids[i]} berbeda dari pola sensor lain")
 
-    flag = len(anomalies) > 0
+    # 🔥 OVERRIDE RULE
+    anomaly_idx = anomaly_idx.union(forced_anomaly_idx)
 
-    row = pd.Series(values, index=feature_cols)
-    row["model_flag"] = model_anomaly
+    # -----------------------------
+    # FINAL
+    # -----------------------------
+    final_alerts = rule_alerts + messages
+    flag = len(anomaly_idx) > 0
+    worst_sensor = int(np.argmax(scores))
+    total_score = float(np.sum(scores))
 
-    insight = " | ".join(anomalies) if anomalies else generate_status(row)
-
-    # =========================
-    # UI OUTPUT (UNCHANGED)
-    # =========================
+    # =====================================================
+    # OUTPUT
+    # =====================================================
     with right:
-        placeholder.empty()
 
-        if sensor_issues:
-            st.error("⚠️ SENSOR ISSUE DETECTED")
-        elif model_anomaly:
-            st.warning("⚠️ MODEL ANOMALY DETECTED")
-        elif abnormal_features:
-            st.warning("⚠️ FEATURE DEVIATION DETECTED")
+        st.markdown("### Analysis Result")
+
+        if flag:
+            st.error("⚠️ Anomaly Detected")
         else:
-            st.success("✅ SOIL CONDITION NORMAL")
+            st.success("✅ All Sensors Normal")
 
-        c1, c2 = st.columns(2)
+        c1, c2 = st.columns(3)
 
         with c1:
             st.markdown(f"""
-                <div style="color:#6b7280; font-size:13px;">Status</div>
-                <div style="
-                    font-size:26px;
-                    font-weight:800;
-                    color:{'#ef4444' if flag else '#16a34a'};
-                ">
-                    {'Anomaly' if flag else 'Normal'}
-                </div>
+            <div class='metric-box'>
+            <div class='small'>Risk Score</div>
+            <h3>{total_score:.3f}</h3>
+            </div>
             """, unsafe_allow_html=True)
 
         with c2:
             st.markdown(f"""
-            <div style="color:#6b7280; font-size:13px;">Risk Score</div>
-            <div style="
-                font-size:26px;
-                font-weight:800;
-                color:#000000;
-            ">
-                {score:.3f}
+            <div class='metric-box'>
+            <div class='small'>Highest Risk</div>
+            <h3>{sensor_ids[worst_sensor]}</h3>
             </div>
             """, unsafe_allow_html=True)
 
-        st.markdown(
-            f"""
-            <div class='card'>
-            <b>Detected Anomalies ({len(anomalies)})</b><br>
-            {'<br>'.join(anomalies) if anomalies else 'No issues detected'}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        # SENSOR STATUS
+        st.markdown("### Sensor Status")
+        cols = st.columns(2)
+
+        for i in range(7):
+            if i in anomaly_idx:
+                cols[i % 2].warning(f"{sensor_ids[i]} anomaly")
+            else:
+                cols[i % 2].success(f"{sensor_ids[i]} normal")
+
+        # DETAIL
+        st.markdown("### Detailed Insight")
+
+        if final_alerts:
+            for msg in final_alerts:
+                st.write("•", msg)
+        else:
+            st.write("All sensors consistent.")
