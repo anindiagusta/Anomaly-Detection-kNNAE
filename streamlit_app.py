@@ -9,7 +9,7 @@ from tensorflow.keras.layers import Input, Dense
 # PAGE CONFIG
 # =====================================================
 st.set_page_config(
-    page_title="Anomaly Detection IoT Sensor Data",
+    page_title="Anomaly Detection Dashboard",
     page_icon="🌱",
     layout="wide"
 )
@@ -56,21 +56,15 @@ input[type=number]{
     color:#64748b;
 }
 
-/* tombol full lebar */
-.stButton > button {
-    width: 100% !important;
-    display: block;
-    background: linear-gradient(90deg,#16a34a,#0284c7);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    font-weight: 700;
-    padding: 0.6rem;
-}
-
-/* paksa container tombol ikut full */
-div.stButton {
-    width: 100% !important;
+/* button */
+.stButton > button{
+    width:100%;
+    background:linear-gradient(90deg,#16a34a,#0284c7);
+    color:white;
+    border:none;
+    border-radius:10px;
+    font-weight:700;
+    padding:0.6rem;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -79,8 +73,7 @@ div.stButton {
 # HEADER
 # =====================================================
 st.write("")
-st.write("")
-st.markdown("<div class='main-title'>🌱 Anomaly Detection IoT Sensor Data</div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'>🌱 IoT Sensor Anomaly Detection Monitoring Dashboard</div>", unsafe_allow_html=True)
 st.markdown("<div class='sub-title'>Hybrid Anomaly Detection using Autoencoder and Isolation Forest</div>", unsafe_allow_html=True)
 
 # =====================================================
@@ -111,7 +104,6 @@ with left:
 
     st.markdown("### Sensor Input")
 
-    # Header
     header = st.columns(8)
     header[0].markdown("**Sensor**")
     for i, f in enumerate(features):
@@ -136,7 +128,7 @@ with left:
 
         sensor_data.append(row)
 
-    run = st.button("Analyze Now")
+    run = st.button("Analyze Now", use_container_width=True)
 
 # =====================================================
 # DEFAULT RIGHT
@@ -205,17 +197,12 @@ if run:
     messages = []
 
     for i in range(len(sensor_ids)):
-
         if preds[i] == -1 or errors[i] > np.mean(errors) + 2*np.std(errors):
             anomaly_idx.add(i)
             messages.append(f"{sensor_ids[i]} berbeda dari pola sensor lain")
 
-    # 🔥 OVERRIDE RULE
     anomaly_idx = anomaly_idx.union(forced_anomaly_idx)
 
-    # -----------------------------
-    # FINAL
-    # -----------------------------
     final_alerts = rule_alerts + messages
     flag = len(anomaly_idx) > 0
     worst_sensor = int(np.argmax(scores))
@@ -233,7 +220,8 @@ if run:
         else:
             st.success("✅ All Sensors Normal")
 
-        c1, c2 = st.columns(3)
+        # ✅ ONLY 2 METRICS (CENTERED)
+        sp1, c1, c2, sp2 = st.columns([1, 2, 2, 1])
 
         with c1:
             st.markdown(f"""
